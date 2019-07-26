@@ -19,12 +19,21 @@ install:
 script:
   - gem build sensu-plugins-ruby.gemspec
   - gem install sensu-plugins-ruby-*.gem
-  - bundle exec rake quick
 
 before_deploy:
 - bash -c "[ ! -d bonsai/ ] && git clone https://github.com/sensu/sensu-go-bonsai-asset.git bonsai || echo 'bonsai/ exists, skipping git clone'"
 
 deploy:
+  - provider: rubygems
+    api_key:
+      secure: Vha7m1Li7Jg7Md81siv18OvnqBaZHGnhhCIfe1ASxf5fe22EbLzqevBgSg8NI2MbOXOjOXZpO1WnWaeQKVRToYdqfLPRVQ0IwhvJxlT+fiYigczhj9jxNejIE7vfuJ/wWkjPubmRBvQBlr1eVT5donoyeCGlEoUGYoHF2AJ5rm2Yy056DxEFLXkYskpJZh49JIaTkELkSk8IfGKmDql2YDJQdqkwLcsz4Zg2cS8I4WlwpsW8bQjvTeuCKKIjnh3ylt9BYLCrs7kUPhXOyTdJzy8JxTzA/J2aM0jN0/PRfXMhzOtQfjywdJlCuVA3WTLBCr6Ny+ciS7W9kE5cHAm9SaPCZKPWPlhZB0KF1y7RpEEY2r+io3AE4oqPNBRHIXjfahyDbd71SqlFC05ZdUThVjGo9rgOHJUyxDjQ44KwjRKiX1e6MVouGHTjDjgATF2dqd1QOGiSKuqw7NmIMxge8unwz+FGVmMxCNqcVAfbMsZ1F0Unyh3KnWo7lp/cr7CyyWTRaRjC4le7l5120e1Akcx0rsHE8vlcqBbHGANtM4qW+qihUtVO0CKN+sPSsIRbmcC9gshIxrsxWX9agnT49UYB5kCy3ajkELjRHCDFtEXKm8DYzxcBRPD68mEZgJxEU63ZSfF1BZfM0Km63tyoxEtwr4CusAG1zIMsJZzWhmQ=
+    gem: sensu-plugins-ruby
+    on:
+      tags: true
+      all_branches: true
+      rvm: 2.5.5
+      repo: SICSoftwareGmbH/sensu-plugins-ruby
+
   - provider: script
     script: bonsai/ruby-runtime/travis-build-ruby-plugin-assets.sh sensu-plugins-ruby
     skip_cleanup: true
