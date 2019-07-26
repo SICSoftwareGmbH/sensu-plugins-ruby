@@ -1,0 +1,128 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+#   check-bundle-audit
+#
+# DESCRIPTION:
+#   Check bundle for vulnerabilities
+#
+# OUTPUT:
+#   Plain text
+#
+# PLATFORMS:
+#   Linux; bundler-audit gem must be installed
+#
+# DEPENDENCIES:
+#   gem: sensu-plugin
+#   gem: bundler-audit
+#
+# LICENSE:
+#   Florian Schwab <me@ydkn.io>
+#   Released under the same terms as Sensu (the MIT license); see LICENSE
+#   for details.
+#
+
+require 'bundler/audit/database'
+require 'bundler/audit/scanner'
+require 'sensu-plugin/check/cli'
+
+# Sensu plugin for checking bundle audit status
+class BundlerAuditCheck < Sensu::Plugin::Check::CLI
+  CRITICALITY_UNKOWN = 0
+  CRITICALITY_LOW    = 1
+  CRITICALITY_MEDIUM = 2
+  CRITICALITY_HIGH   = 3
+
+  option :paths,
+         short: '-p RUBY_APP_PATHS',
+         long: '--paths RUBY_APP_PATHS',
+         description: 'Comma separated list of paths containing ruby applications',
+         required: true
+
+  option :criticality,
+         short: '-c CRIT_NUM',
+         long: '--criticality CRIT_NUM',
+         description: 'Ignore vulnerabilities with lower criticality than this',
+         default: '0'
+
+  option :ignore,
+         short: '-i CVE_NUBMERS',
+         long: '--ignore CVE_NUMBERS',
+         description: 'Comma separated list of CVE numbers to ignore',
+         default: ''
+
+  def run
+    update_audit_db
+
+    checks = config[:paths].split(',').map do |path|
+      check_audit(path.strip)
+    end
+
+    message = checks.select { |c| %i[critical warning].include?(c[:status]) }
+                    .map { |c| "#{c[:path]}: #{c[:message]}" }
+                    .compact.join("\n")
+
+    if checks.any? { |c| c[:status] == :critical }
+      critical("Vulnerabilities found: #{message}")
+    elsif checks.any? { |c| c[:status] == :warning }
+      warning("Vulnerabilities found: #{message}")
+    else
+      ok('No vulnerabilities found')
+    end
+  end
+
+  private
+
+  def update_audit_db
+    ok = Bundler::Audit::Database.update!(quiet: true)
+
+    warning("Failed to update advisory db: #{stdout} #{stderr}") unless ok
+  end
+
+  def criticality_to_int(criticality)
+    case criticality
+    when :high
+      CRITICALITY_HIGH
+    when :medium
+      CRITICALITY_MEDIUM
+    when :low
+      CRITICALITY_LOW
+    else
+      CRITICALITY_UNKOWN
+    end
+  end
+
+  def check_audit(path)
+    ENV['BUNDLE_GEMFILE'] = File.join(path, 'Gemfile.lock')
+
+    vulnerabilities = []
+
+    scanner = Bundler::Audit::Scanner.new(path)
+    scanner.scan do |result|
+      case result
+      when Bundler::Audit::Scanner::InsecureSource
+        vulnerabilities << { message: "Insecure Source URI found: #{result.source}", criticality: CRITICALITY_HIGH }
+      when Bundler::Audit::Scanner::UnpatchedGem
+        vulnerabilities << { gem: result.gem, advisory: result.advisory, criticality: criticality_to_int(result.advisory.criticality) }
+      end
+    end
+
+    if vulnerabilities.empty?
+      { path: path, status: :ok, message: 'No vulnerabilities found' }
+    else
+      message = vulnerabilities.map do |v|
+        v[:message] || "#{v[:gem].name} #{v[:gem].version} (#{v[:advisory].cve || v[:advisory].osvdb})"
+      end.join(', ')
+
+      if vulnerabilities.any? { |v| v[:criticality] >= config[:criticality].to_i && !config[:ignore].split(',').map(&:strip).include?(v[:advisory]) }
+        { path: path, status: :critical, message: message }
+      elsif vulnerabilities.any?
+        { path: path, status: :ok, message: message }
+      else
+        { path: path, status: :warning, message: 'Vulnerabilities found' }
+      end
+    end
+  rescue StandardError => e
+    { path: path, status: :warning, message: "Failed to check for vulnerabilities: #{e.message}" }
+  end
+end

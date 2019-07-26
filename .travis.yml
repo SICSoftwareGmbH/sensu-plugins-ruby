@@ -1,0 +1,34 @@
+sudo: required
+language: ruby
+
+rvm:
+  - 2.5.5
+
+services:
+  - docker
+
+cache:
+  - bundler
+
+before_install:
+  - gem install bundler
+
+install:
+  - bundle install
+
+script:
+  - gem build sensu-plugins-ruby.gemspec
+  - gem install sensu-plugins-ruby-*.gem
+  - bundle exec rake quick
+
+before_deploy:
+- bash -c "[ ! -d bonsai/ ] && git clone https://github.com/sensu/sensu-go-bonsai-asset.git bonsai || echo 'bonsai/ exists, skipping git clone'"
+
+deploy:
+  - provider: script
+    script: bonsai/ruby-runtime/travis-build-ruby-plugin-assets.sh sensu-plugins-ruby
+    skip_cleanup: true
+    on:
+      tags: true
+      all_branches: true
+      rvm: 2.5.5

@@ -1,0 +1,112 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+#   check-ruby-version
+#
+# DESCRIPTION:
+#   Check if used ruby version in .ruby-version is current patch release
+#
+# OUTPUT:
+#   Plain text
+#
+# PLATFORMS:
+#   Linux
+#
+# DEPENDENCIES:
+#   gem: sensu-plugin
+#
+# LICENSE:
+#   Florian Schwab <me@ydkn.io>
+#   Released under the same terms as Sensu (the MIT license); see LICENSE
+#   for details.
+#
+
+require 'net/http'
+require 'uri'
+require 'sensu-plugin/check/cli'
+
+# Sensu plugin for checking bundle audit status
+class RubyVersionCheck < Sensu::Plugin::Check::CLI
+  RVM_KNOWN_RUBIES_URL = 'https://raw.githubusercontent.com/rvm/rvm/stable/config/known'
+  MIN_RUBY_VERSION     = [2, 4].freeze
+
+  option :paths,
+         short: '-p RUBY_APP_PATHS',
+         long: '--paths RUBY_APP_PATHS',
+         description: 'Comma separated list of paths containing ruby applications',
+         required: true
+
+  def run
+    known_rubies = fetch_known_rubies
+    latest_ruby = known_rubies.max
+
+    checks = config[:paths].split(',').map do |path|
+      check_path(path, known_rubies, latest_ruby)
+    end
+
+    message = checks.select { |c| %i[critical warning].include?(c[:status]) }
+                    .map { |c| "#{c[:path]}: #{c[:message]}" }
+                    .compact.join("\n")
+
+    if checks.any? { |c| c[:status] == :critical }
+      critical(message)
+    elsif checks.any? { |c| c[:status] == :warning }
+      warning(message)
+    elsif checks.length == 1
+      ok(checks[0][:message])
+    else
+      ok('Ruby versions are current')
+    end
+  end
+
+  private
+
+  def fetch_known_rubies
+    Net::HTTP.get(URI.parse(RVM_KNOWN_RUBIES_URL))
+             .split("\n")
+             .map { |l| l.match(/^\[ruby\-\](\d+)\.(\d+)\[\.(\d+)\]/) }
+             .compact
+             .map { |m| [m[1], m[2], m[3]].map(&:to_i) }
+             .select { |v| v[0] >= MIN_RUBY_VERSION[0] && v[1] >= MIN_RUBY_VERSION[1] }
+  end
+
+  def parse_ruby_version(string)
+    match = string.strip.match(/^(ruby\-)?(\d+)\.(\d+)\.(\d+)/)
+
+    return unless match
+
+    [match[2], match[3], match[4]].map(&:to_i)
+  end
+
+  def check_path(path, known_rubies, latest_ruby)
+    used_ruby = parse_ruby_version(File.read(File.join(path, '.ruby-version')))
+    current_branch_patch_version = known_rubies.find { |v| v[0] == used_ruby[0] && v[1] == used_ruby[1] }
+
+    if current_branch_patch_version.nil?
+      {
+        path: path,
+        status: :critical,
+        message: format('The ruby version has reached its end of live: %s', used_ruby.join('.'))
+      }
+    elsif current_branch_patch_version[2] > used_ruby[2]
+      {
+        path: path,
+        status: :warning,
+        message: format('Outdated Ruby version of %s branch: %s', used_ruby[0..-2].join('.'), used_ruby.join('.'))
+      }
+    elsif latest_ruby[0] > used_ruby[0] || latest_ruby[1] > used_ruby[1]
+      {
+        path: path,
+        status: :ok,
+        message: format('Using latest version of %s branch: %s - latest version: %s',
+                        used_ruby[0..-2].join('.'), used_ruby.join('.'), latest_ruby[0..-2].join('.'))
+      }
+    else
+      {
+        path: path,
+        status: :ok,
+        message: format('Using latest version of ruby %s', used_ruby.join('.'))
+      }
+    end
+  end
+end
