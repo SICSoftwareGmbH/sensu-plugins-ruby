@@ -35,7 +35,8 @@ deploy:
       repo: SICSoftwareGmbH/sensu-plugins-ruby
 
   - provider: script
-    script: bonsai/ruby-runtime/travis-build-ruby-plugin-assets.sh sensu-plugins-ruby
+    script:
+      - ./deploy.sh
     skip_cleanup: true
     on:
       tags: true
