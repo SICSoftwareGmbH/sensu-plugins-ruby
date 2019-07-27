@@ -1,6 +1,5 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
-
+#
 #   check-ruby-version
 #
 # DESCRIPTION:
@@ -27,7 +26,7 @@ require 'sensu-plugin/check/cli'
 
 # Sensu plugin for checking bundle audit status
 class RubyVersionCheck < Sensu::Plugin::Check::CLI
-  RVM_KNOWN_RUBIES_URL = 'https://raw.githubusercontent.com/rvm/rvm/stable/config/known'
+  RVM_KNOWN_RUBIES_URL = 'https://raw.githubusercontent.com/rvm/rvm/stable/config/known'.freeze
   MIN_RUBY_VERSION     = [2, 4].freeze
 
   option :paths,
@@ -37,16 +36,7 @@ class RubyVersionCheck < Sensu::Plugin::Check::CLI
          required: true
 
   def run
-    known_rubies = fetch_known_rubies
-    latest_ruby = known_rubies.max
-
-    checks = config[:paths].split(',').map do |path|
-      check_path(path, known_rubies, latest_ruby)
-    end
-
-    message = checks.select { |c| %i[critical warning].include?(c[:status]) }
-                    .map { |c| "#{c[:path]}: #{c[:message]}" }
-                    .compact.join("\n")
+    checks, message = check_results
 
     if checks.any? { |c| c[:status] == :critical }
       critical(message)
@@ -60,6 +50,21 @@ class RubyVersionCheck < Sensu::Plugin::Check::CLI
   end
 
   private
+
+  def check_results
+    known_rubies = fetch_known_rubies
+    latest_ruby = known_rubies.max
+
+    checks = config[:paths].split(',').map do |path|
+      check_path(path, known_rubies, latest_ruby)
+    end
+
+    message = checks.select { |c| %i[critical warning].include?(c[:status]) }
+                    .map { |c| "#{c[:path]}: #{c[:message]}" }
+                    .compact.join("\n")
+
+    [checks, message]
+  end
 
   def fetch_known_rubies
     Net::HTTP.get(URI.parse(RVM_KNOWN_RUBIES_URL))
@@ -82,31 +87,52 @@ class RubyVersionCheck < Sensu::Plugin::Check::CLI
     used_ruby = parse_ruby_version(File.read(File.join(path, '.ruby-version')))
     current_branch_patch_version = known_rubies.find { |v| v[0] == used_ruby[0] && v[1] == used_ruby[1] }
 
+    path_status(used_ruby, current_branch_patch_version, latest_ruby)
+  end
+
+  def eol_status(used_ruby)
+    {
+      status: :critical,
+      message: format('The ruby version has reached its end of live: %<version>s',
+                      version: used_ruby.join('.'))
+    }
+  end
+
+  def outdated_status(used_ruby)
+    {
+      status: :warning,
+      message: format('Outdated Ruby version of %<branch>s branch: %<version>s',
+                      branch: used_ruby[0..-2].join('.'),
+                      version: used_ruby.join('.'))
+    }
+  end
+
+  def latest_branch_status(used_ruby, latest_ruby)
+    {
+      status: :ok,
+      message: format('Using latest version of %<branch>s branch: %<version>s - latest version: %<latest>s',
+                      branch: used_ruby[0..-2].join('.'),
+                      version: used_ruby.join('.'),
+                      latest: latest_ruby[0..-2].join('.'))
+    }
+  end
+
+  def latest_status(used_ruby)
+    {
+      status: :ok,
+      message: format('Using latest version of ruby %<version>s', version: used_ruby.join('.'))
+    }
+  end
+
+  def path_status(used_ruby, current_branch_patch_version, latest_ruby)
     if current_branch_patch_version.nil?
-      {
-        path: path,
-        status: :critical,
-        message: format('The ruby version has reached its end of live: %s', used_ruby.join('.'))
-      }
+      eol_status(used_ruby)
     elsif current_branch_patch_version[2] > used_ruby[2]
-      {
-        path: path,
-        status: :warning,
-        message: format('Outdated Ruby version of %s branch: %s', used_ruby[0..-2].join('.'), used_ruby.join('.'))
-      }
+      outdated_status(used_ruby)
     elsif latest_ruby[0] > used_ruby[0] || latest_ruby[1] > used_ruby[1]
-      {
-        path: path,
-        status: :ok,
-        message: format('Using latest version of %s branch: %s - latest version: %s',
-                        used_ruby[0..-2].join('.'), used_ruby.join('.'), latest_ruby[0..-2].join('.'))
-      }
+      latest_branch_status(used_ruby, latest_ruby)
     else
-      {
-        path: path,
-        status: :ok,
-        message: format('Using latest version of ruby %s', used_ruby.join('.'))
-      }
+      latest_status(used_ruby)
     end
   end
 end

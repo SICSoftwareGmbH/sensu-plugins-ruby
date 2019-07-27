@@ -1,5 +1,21 @@
-LineLength:
-  Max: 160
+require:
+  - rubocop-performance
 
-AbcSize:
+AllCops:
+  TargetRubyVersion: 2.4
+
+Naming/FileName:
+  Exclude:
+    - 'lib/sensu-plugins-ruby.rb'
+
+Metrics/LineLength:
+  Max: 120
+
+Metrics/MethodLength:
   Max: 20
+
+Metrics/AbcSize:
+  Max: 20
+
+Style/FrozenStringLiteralComment:
+  Enabled: false

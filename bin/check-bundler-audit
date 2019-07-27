@@ -1,6 +1,5 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
-
+#
 #   check-bundle-audit
 #
 # DESCRIPTION:
@@ -52,15 +51,7 @@ class BundlerAuditCheck < Sensu::Plugin::Check::CLI
          default: ''
 
   def run
-    update_audit_db
-
-    checks = config[:paths].split(',').map do |path|
-      check_audit(path.strip)
-    end
-
-    message = checks.select { |c| %i[critical warning].include?(c[:status]) }
-                    .map { |c| "#{c[:path]}: #{c[:message]}" }
-                    .compact.join("\n")
+    checks, message = check_results
 
     if checks.any? { |c| c[:status] == :critical }
       critical("Vulnerabilities found: #{message}")
@@ -79,6 +70,20 @@ class BundlerAuditCheck < Sensu::Plugin::Check::CLI
     warning("Failed to update advisory db: #{stdout} #{stderr}") unless ok
   end
 
+  def check_results
+    update_audit_db
+
+    checks = config[:paths].split(',').map do |path|
+      check_audit(path.strip)
+    end
+
+    message = checks.select { |c| %i[critical warning].include?(c[:status]) }
+                    .map { |c| "#{c[:path]}: #{c[:message]}" }
+                    .compact.join("\n")
+
+    [checks, message]
+  end
+
   def criticality_to_int(criticality)
     case criticality
     when :high
@@ -92,7 +97,7 @@ class BundlerAuditCheck < Sensu::Plugin::Check::CLI
     end
   end
 
-  def check_audit(path)
+  def vulnerabilities_for_path(path)
     ENV['BUNDLE_GEMFILE'] = File.join(path, 'Gemfile.lock')
 
     vulnerabilities = []
@@ -103,24 +108,39 @@ class BundlerAuditCheck < Sensu::Plugin::Check::CLI
       when Bundler::Audit::Scanner::InsecureSource
         vulnerabilities << { message: "Insecure Source URI found: #{result.source}", criticality: CRITICALITY_HIGH }
       when Bundler::Audit::Scanner::UnpatchedGem
-        vulnerabilities << { gem: result.gem, advisory: result.advisory, criticality: criticality_to_int(result.advisory.criticality) }
+        vulnerabilities << {
+          gem: result.gem,
+          advisory: result.advisory,
+          criticality: criticality_to_int(result.advisory.criticality)
+        }
       end
     end
 
-    if vulnerabilities.empty?
-      { path: path, status: :ok, message: 'No vulnerabilities found' }
-    else
-      message = vulnerabilities.map do |v|
-        v[:message] || "#{v[:gem].name} #{v[:gem].version} (#{v[:advisory].cve || v[:advisory].osvdb})"
-      end.join(', ')
+    vulnerabilities
+  end
 
-      if vulnerabilities.any? { |v| v[:criticality] >= config[:criticality].to_i && !config[:ignore].split(',').map(&:strip).include?(v[:advisory]) }
-        { path: path, status: :critical, message: message }
-      elsif vulnerabilities.any?
-        { path: path, status: :ok, message: message }
-      else
-        { path: path, status: :warning, message: 'Vulnerabilities found' }
-      end
+  def message_for_vulnerabilities(vulnerabilities)
+    return 'No vulnerabilities found' if vulnerabilities.empty?
+
+    vulnerabilities.map do |v|
+      v[:message] || "#{v[:gem].name} #{v[:gem].version} (#{v[:advisory].cve || v[:advisory].osvdb})"
+    end.join(', ')
+  end
+
+  def ignore?(vulnerability)
+    config[:ignore].split(',').map(&:strip).include?(vulnerability[:advisory])
+  end
+
+  def check_audit(path)
+    vulnerabilities = vulnerabilities_for_path(path)
+    message = message_for_vulnerabilities(vulnerabilities)
+
+    if vulnerabilities.empty?
+      { path: path, status: :ok, message: message }
+    elsif vulnerabilities.any? { |v| v[:criticality] >= config[:criticality].to_i && !ignore?(v) }
+      { path: path, status: :critical, message: message }
+    else
+      { path: path, status: :ok, message: message }
     end
   rescue StandardError => e
     { path: path, status: :warning, message: "Failed to check for vulnerabilities: #{e.message}" }
