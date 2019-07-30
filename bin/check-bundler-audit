@@ -51,6 +51,8 @@ class BundlerAuditCheck < Sensu::Plugin::Check::CLI
          default: ''
 
   def run
+    update_audit_db
+
     checks, message = check_results
 
     if checks.any? { |c| c[:status] == :critical }
@@ -67,12 +69,10 @@ class BundlerAuditCheck < Sensu::Plugin::Check::CLI
   def update_audit_db
     ok = Bundler::Audit::Database.update!(quiet: true)
 
-    warning("Failed to update advisory db: #{stdout} #{stderr}") unless ok
+    warning('Failed to update advisory db') unless ok
   end
 
   def check_results
-    update_audit_db
-
     checks = config[:paths].split(',').map do |path|
       check_audit(path.strip)
     end
