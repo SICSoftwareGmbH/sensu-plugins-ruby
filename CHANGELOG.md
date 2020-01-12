@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2020-01-13
+### Changed
+- use RVM master branch to validate current ruby versions
+
 ## [0.1.3] - 2019-07-30
 ### Fixed
 - error output if updating the advisory-db failed

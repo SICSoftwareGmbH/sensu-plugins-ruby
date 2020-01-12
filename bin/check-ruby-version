@@ -26,7 +26,7 @@ require 'sensu-plugin/check/cli'
 
 # Sensu plugin for checking bundle audit status
 class RubyVersionCheck < Sensu::Plugin::Check::CLI
-  RVM_KNOWN_RUBIES_URL = 'https://raw.githubusercontent.com/rvm/rvm/stable/config/known'.freeze
+  RVM_KNOWN_RUBIES_URL = 'https://raw.githubusercontent.com/rvm/rvm/master/config/known'.freeze
   MIN_RUBY_VERSION     = [2, 4].freeze
 
   option :paths,
