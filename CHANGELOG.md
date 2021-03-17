@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - change ruby-version regex to match "[ruby-]3[.0.0]"
 - change filter logic to support 3.0.0
+- change minimum supported ruby 2 version to 2.5
 
 ## [0.2.0] - 2020-01-13
 ### Changed
