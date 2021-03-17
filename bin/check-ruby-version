@@ -27,7 +27,8 @@ require 'sensu-plugin/check/cli'
 # Sensu plugin for checking bundle audit status
 class RubyVersionCheck < Sensu::Plugin::Check::CLI
   RVM_KNOWN_RUBIES_URL = 'https://raw.githubusercontent.com/rvm/rvm/master/config/known'.freeze
-  MIN_RUBY_VERSION     = [2, 4].freeze
+  MIN_RUBY2_VERSION    = [2, 4].freeze
+  MIN_RUBY3_VERSION    = [3, 0].freeze
 
   option :paths,
          short: '-p RUBY_APP_PATHS',
@@ -69,10 +70,10 @@ class RubyVersionCheck < Sensu::Plugin::Check::CLI
   def fetch_known_rubies
     Net::HTTP.get(URI.parse(RVM_KNOWN_RUBIES_URL))
              .split("\n")
-             .map { |l| l.match(/^\[ruby\-\](\d+)\.(\d+)\[\.(\d+)\]/) }
+             .map { |l| l.match(/^\[ruby\-\](\d+)\[?\.(\d+)\[?\.(\d+)\]/) }
              .compact
              .map { |m| [m[1], m[2], m[3]].map(&:to_i) }
-             .select { |v| v[0] >= MIN_RUBY_VERSION[0] && v[1] >= MIN_RUBY_VERSION[1] }
+             .select { |v| (v[0] == MIN_RUBY2_VERSION[0] && v[1] >= MIN_RUBY2_VERSION[1]) || (v[0] >= MIN_RUBY3_VERSION[0] && v[1] >= MIN_RUBY3_VERSION[1]) }
   end
 
   def parse_ruby_version(string)
